@@ -4,6 +4,7 @@ import { CURRICULUM_LEVELS } from '../curriculum/kpmCurriculum';
 import { storage } from '../services/storage';
 import { soundFx } from '../services/soundEffects';
 import { voiceService, VoiceOption } from '../services/voice';
+import { VoiceStudio } from '../components/voice/VoiceStudio';
 import { t, getMasteryLabel } from '../i18n/translations';
 
 interface ParentDashboardViewProps {
@@ -30,7 +31,7 @@ export const ParentDashboardView: React.FC<ParentDashboardViewProps> = ({
   const [userGateInput, setUserGateInput] = useState<string>('');
   const [gateError, setGateError] = useState<boolean>(false);
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'curriculum' | 'history' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'curriculum' | 'history' | 'voice_studio' | 'settings'>('overview');
   const [attemptLogs, setAttemptLogs] = useState<QuestionAttemptLog[]>([]);
   const [availableVoices, setAvailableVoices] = useState<VoiceOption[]>([]);
 
@@ -159,10 +160,11 @@ export const ParentDashboardView: React.FC<ParentDashboardViewProps> = ({
       </div>
 
       {/* Tabs */}
-      <div className="grid grid-cols-4 gap-1.5 w-full bg-indigo-950/60 p-1 rounded-2xl mb-5 text-xs font-black">
+      <div className="grid grid-cols-5 gap-1 w-full bg-indigo-950/60 p-1 rounded-2xl mb-5 text-[11px] font-black">
         {[
           { id: 'overview', label: language === 'bm' ? 'Ringkasan' : 'Summary' },
-          { id: 'curriculum', label: language === 'bm' ? 'Kurikulum' : 'Curriculum' },
+          { id: 'curriculum', label: language === 'bm' ? 'Kurikulum' : 'Syllabus' },
+          { id: 'voice_studio', label: language === 'bm' ? '🎙️ Suara' : '🎙️ Voice' },
           { id: 'history', label: language === 'bm' ? 'Sejarah' : 'History' },
           { id: 'settings', label: language === 'bm' ? 'Tetapan' : 'Settings' }
         ].map(tab => (
@@ -170,7 +172,7 @@ export const ParentDashboardView: React.FC<ParentDashboardViewProps> = ({
             key={tab.id}
             type="button"
             onClick={() => setActiveTab(tab.id as any)}
-            className={`py-2 rounded-xl transition-all ${
+            className={`py-2 px-1 rounded-xl transition-all text-center truncate ${
               activeTab === tab.id ? 'bg-amber-400 text-indigo-950 shadow' : 'text-indigo-200 hover:text-white'
             }`}
           >
@@ -308,7 +310,12 @@ export const ParentDashboardView: React.FC<ParentDashboardViewProps> = ({
         </div>
       )}
 
-      {/* TAB 4: SETTINGS */}
+      {/* TAB 4: VOICE STUDIO (RAKAMAN SUARA ANAK) */}
+      {activeTab === 'voice_studio' && (
+        <VoiceStudio language={language} />
+      )}
+
+      {/* TAB 5: SETTINGS */}
       {activeTab === 'settings' && (
         <div className="w-full bg-white rounded-3xl p-5 shadow border border-indigo-100 flex flex-col gap-5">
           {/* Sound FX Toggle */}

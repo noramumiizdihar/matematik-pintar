@@ -1,9 +1,10 @@
 // Text-To-Speech (TTS) Voice Engine with Authentic Bahasa Melayu (Malaysia) Audio Bank
-// Uses pre-recorded studio Malaysian audio for numbers 0-100, math terms, and feedback
+// Supports Custom Family Voice Recordings (Stored in IndexedDB)
+// Falls back to pre-recorded studio Malaysian audio for numbers 0-100, math terms, and feedback
 // Streams authentic Google Malaysian Malay TTS for dynamic questions
-// Never uses Indonesian or foreign accent synthesizers
 import { Language } from '../types/curriculum';
 import { numberToWords } from '../utils/numberWords';
+import { storage } from './storage';
 
 export interface VoiceOption {
   uri: string;
@@ -15,59 +16,6 @@ export interface VoiceOption {
 
 const INDONESIAN_VOICE_REGEX = /indonesia|id-id|id_id|\bgadis\b|\bardi\b|\bandika\b|\bdita\b/i;
 
-function matchStaticMalayAudio(text: string): string | null {
-  const trimmed = text.trim().toLowerCase();
-
-  // 1. Direct number matching (e.g. "8", "8.", "8. lapan", "lapan", "25", "100")
-  const leadingNumMatch = trimmed.match(/^(\d+)(?:\.|$|\s)/);
-  if (leadingNumMatch) {
-    const n = parseInt(leadingNumMatch[1], 10);
-    if (n >= 0 && n <= 100) {
-      return `/audio/ms/numbers/${n}.mp3`;
-    }
-  }
-
-  // Exact Malay number words
-  const malayNumberWords: Record<string, number> = {
-    'sifar': 0, 'kosong': 0, 'satu': 1, 'dua': 2, 'tiga': 3, 'empat': 4, 'lima': 5,
-    'enam': 6, 'tujuh': 7, 'lapan': 8, 'sembilan': 9, 'sepuluh': 10,
-    'sebelas': 11, 'dua belas': 12, 'tiga belas': 13, 'empat belas': 14, 'lima belas': 15,
-    'enam belas': 16, 'tujuh belas': 17, 'lapan belas': 18, 'sembilan belas': 19, 'dua puluh': 20,
-    'seratus': 100
-  };
-  if (malayNumberWords[trimmed] !== undefined) {
-    return `/audio/ms/numbers/${malayNumberWords[trimmed]}.mp3`;
-  }
-
-  // 2. Feedback phrases
-  if (trimmed.includes('syabas') || trimmed.includes('hebat sekali')) return '/audio/ms/feedback/syabas.mp3';
-  if (trimmed.includes('tepat sekali') || trimmed.includes('anda sangat bijak')) return '/audio/ms/feedback/tepat.mp3';
-  if (trimmed.includes('bagus') || trimmed.includes('teruskan usaha')) return '/audio/ms/feedback/bagus.mp3';
-  if (trimmed.includes('hebat')) return '/audio/ms/feedback/hebat.mp3';
-  if (trimmed.includes('cuba lagi') || trimmed.includes('hampir betul')) return '/audio/ms/feedback/cuba_lagi.mp3';
-  if (trimmed.includes('jangan putus asa')) return '/audio/ms/feedback/jangan_putus_asa.mp3';
-  if (trimmed.includes('pasti boleh')) return '/audio/ms/feedback/pasti_boleh.mp3';
-
-  // 3. Single math operators & units
-  if (trimmed === 'tambah' || trimmed === '+') return '/audio/ms/math/tambah.mp3';
-  if (trimmed === 'tolak' || trimmed === '-') return '/audio/ms/math/tolak.mp3';
-  if (trimmed === 'darab' || trimmed === '×' || trimmed === '*') return '/audio/ms/math/darab.mp3';
-  if (trimmed === 'bahagi' || trimmed === '÷') return '/audio/ms/math/bahagi.mp3';
-  if (trimmed === 'sama dengan' || trimmed === '=') return '/audio/ms/math/sama_dengan.mp3';
-  if (trimmed === 'ringgit' || trimmed === 'rm') return '/audio/ms/math/ringgit.mp3';
-  if (trimmed === 'sen') return '/audio/ms/math/sen.mp3';
-  if (trimmed === 'sa') return '/audio/ms/math/sa.mp3';
-  if (trimmed === 'puluh') return '/audio/ms/math/puluh.mp3';
-  if (trimmed === 'ratus') return '/audio/ms/math/ratus.mp3';
-  if (trimmed === 'ribu') return '/audio/ms/math/ribu.mp3';
-  if (trimmed === 'sentimeter') return '/audio/ms/math/sentimeter.mp3';
-  if (trimmed === 'kilogram') return '/audio/ms/math/kilogram.mp3';
-  if (trimmed === 'meter') return '/audio/ms/math/meter.mp3';
-  if (trimmed === 'liter') return '/audio/ms/math/liter.mp3';
-
-  return null;
-}
-
 class VoiceEngine {
   private isVoiceEnabled: boolean = true;
   private voiceSpeed: number = 0.95;
@@ -78,8 +26,10 @@ class VoiceEngine {
   private voices: SpeechSynthesisVoice[] = [];
   private isSpeakingState: boolean = false;
   private currentAudio: HTMLAudioElement | null = null;
+  private customAudioUrls: Map<string, string> = new Map();
   private onStateChangeListeners: ((isSpeaking: boolean) => void)[] = [];
   private onVoicesChangedListeners: (() => void)[] = [];
+  private onCustomAudioChangedListeners: (() => void)[] = [];
 
   constructor() {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -92,6 +42,9 @@ class VoiceEngine {
 
       window.speechSynthesis.addEventListener?.('voiceschanged', () => this.loadVoices());
     }
+
+    // Load any custom child voice recordings from IndexedDB
+    this.initCustomAudio();
   }
 
   private loadVoices() {
@@ -101,6 +54,67 @@ class VoiceEngine {
       this.voices = vList;
       this.onVoicesChangedListeners.forEach(cb => cb());
     }
+  }
+
+  // --- Custom Voice Audio Management ---
+  public async initCustomAudio(): Promise<void> {
+    try {
+      const records = await storage.getAllCustomAudio();
+      Object.entries(records).forEach(([key, blob]) => {
+        const old = this.customAudioUrls.get(key);
+        if (old) URL.revokeObjectURL(old);
+        this.customAudioUrls.set(key, URL.createObjectURL(blob));
+      });
+      this.notifyCustomAudioChanged();
+    } catch {
+      // Ignored
+    }
+  }
+
+  public async registerCustomAudio(key: string, blob: Blob): Promise<void> {
+    await storage.saveCustomAudio(key, blob);
+    const old = this.customAudioUrls.get(key);
+    if (old) URL.revokeObjectURL(old);
+    this.customAudioUrls.set(key, URL.createObjectURL(blob));
+    this.notifyCustomAudioChanged();
+  }
+
+  public async unregisterCustomAudio(key: string): Promise<void> {
+    await storage.deleteCustomAudio(key);
+    const old = this.customAudioUrls.get(key);
+    if (old) URL.revokeObjectURL(old);
+    this.customAudioUrls.delete(key);
+    this.notifyCustomAudioChanged();
+  }
+
+  public async resetAllCustomAudio(): Promise<void> {
+    await storage.resetAllCustomAudio();
+    this.customAudioUrls.forEach(url => URL.revokeObjectURL(url));
+    this.customAudioUrls.clear();
+    this.notifyCustomAudioChanged();
+  }
+
+  public hasCustomAudio(key: string): boolean {
+    return this.customAudioUrls.has(key);
+  }
+
+  public getCustomAudioUrl(key: string): string | undefined {
+    return this.customAudioUrls.get(key);
+  }
+
+  public getAllCustomAudioKeys(): string[] {
+    return Array.from(this.customAudioUrls.keys());
+  }
+
+  public onCustomAudioChanged(cb: () => void) {
+    this.onCustomAudioChangedListeners.push(cb);
+    return () => {
+      this.onCustomAudioChangedListeners = this.onCustomAudioChangedListeners.filter(l => l !== cb);
+    };
+  }
+
+  private notifyCustomAudioChanged() {
+    this.onCustomAudioChangedListeners.forEach(cb => cb());
   }
 
   public onVoicesLoaded(cb: () => void) {
@@ -141,8 +155,6 @@ class VoiceEngine {
   }
 
   public hasMalaysianVoice(): boolean {
-    // We now have built-in static audio files for all 0-100 numbers and feedback,
-    // plus the local streaming TTS proxy, so authentic Malaysian Malay audio is always active!
     return true;
   }
 
@@ -225,19 +237,28 @@ class VoiceEngine {
     this.notifyState(false);
   }
 
-  private playAudio(url: string, onEnd?: () => void): boolean {
+  /**
+   * Plays an audio URL.
+   * If isCustom is true, plays at natural 1.0x speed with preserved pitch.
+   * If isCustom is false, applies gentle child-tone pitch shift.
+   */
+  public playAudio(url: string, isCustom: boolean = false, onEnd?: () => void): boolean {
     try {
       this.stop();
 
       const audio = new Audio(url);
       this.currentAudio = audio;
 
-      // Child tone pitch shift:
-      // By disabling pitch preservation, speeding up playback naturally raises the pitch
-      // into a cute, sweet young child voice!
-      (audio as any).preservesPitch = false;
-      const rate = this.voicePersona === 'child' ? 1.15 : this.voicePersona === 'gentle' ? 1.08 : 1.0;
-      audio.playbackRate = rate;
+      if (isCustom) {
+        // Child's own recorded voice: play completely naturally
+        audio.playbackRate = 1.0;
+        (audio as any).preservesPitch = true;
+      } else {
+        // Studio sample: shift pitch to cheerful kid tone
+        (audio as any).preservesPitch = false;
+        const rate = this.voicePersona === 'child' ? 1.15 : this.voicePersona === 'gentle' ? 1.08 : 1.0;
+        audio.playbackRate = rate;
+      }
 
       this.notifyState(true);
 
@@ -266,6 +287,89 @@ class VoiceEngine {
       if (onEnd) onEnd();
       return false;
     }
+  }
+
+  /**
+   * Match text against custom recorded audio and studio audio bank
+   */
+  private matchAudioItem(text: string): { url: string; isCustom: boolean } | null {
+    const trimmed = text.trim().toLowerCase();
+
+    // 1. Direct number matching (e.g. "8", "8.", "8. lapan", "lapan", "25", "100")
+    const leadingNumMatch = trimmed.match(/^(\d+)(?:\.|$|\s)/);
+    let numVal: number | null = null;
+    if (leadingNumMatch) {
+      numVal = parseInt(leadingNumMatch[1], 10);
+    } else {
+      const malayNumberWords: Record<string, number> = {
+        'sifar': 0, 'kosong': 0, 'satu': 1, 'dua': 2, 'tiga': 3, 'empat': 4, 'lima': 5,
+        'enam': 6, 'tujuh': 7, 'lapan': 8, 'sembilan': 9, 'sepuluh': 10,
+        'sebelas': 11, 'dua belas': 12, 'tiga belas': 13, 'empat belas': 14, 'lima belas': 15,
+        'enam belas': 16, 'tujuh belas': 17, 'lapan belas': 18, 'sembilan belas': 19, 'dua puluh': 20,
+        'seratus': 100
+      };
+      if (malayNumberWords[trimmed] !== undefined) {
+        numVal = malayNumberWords[trimmed];
+      }
+    }
+
+    if (numVal !== null && numVal >= 0 && numVal <= 100) {
+      const customKey = `num_${numVal}`;
+      if (this.customAudioUrls.has(customKey)) {
+        return { url: this.customAudioUrls.get(customKey)!, isCustom: true };
+      }
+      return { url: `/audio/ms/numbers/${numVal}.mp3`, isCustom: false };
+    }
+
+    // 2. Feedback phrases
+    const feedbackMap: [string[], string, string][] = [
+      [['syabas', 'hebat sekali'], 'fb_syabas', 'syabas'],
+      [['tepat sekali', 'anda sangat bijak', 'tepat'], 'fb_tepat', 'tepat'],
+      [['bagus', 'teruskan usaha'], 'fb_bagus', 'bagus'],
+      [['hebat', 'jawapan betul'], 'fb_hebat', 'hebat'],
+      [['cuba lagi', 'hampir betul'], 'fb_cuba_lagi', 'cuba_lagi'],
+      [['jangan putus asa'], 'fb_jangan_putus_asa', 'jangan_putus_asa'],
+      [['pasti boleh'], 'fb_pasti_boleh', 'pasti_boleh']
+    ];
+
+    for (const [keywords, customKey, fileKey] of feedbackMap) {
+      if (keywords.some(kw => trimmed.includes(kw))) {
+        if (this.customAudioUrls.has(customKey)) {
+          return { url: this.customAudioUrls.get(customKey)!, isCustom: true };
+        }
+        return { url: `/audio/ms/feedback/${fileKey}.mp3`, isCustom: false };
+      }
+    }
+
+    // 3. Math operators & units
+    const mathMap: [string[], string, string][] = [
+      [['tambah', '+'], 'math_tambah', 'tambah'],
+      [['tolak', '-'], 'math_tolak', 'tolak'],
+      [['darab', '×', '*'], 'math_darab', 'darab'],
+      [['bahagi', '÷'], 'math_bahagi', 'bahagi'],
+      [['sama dengan', '='], 'math_sama_dengan', 'sama_dengan'],
+      [['ringgit', 'rm'], 'math_ringgit', 'ringgit'],
+      [['sen'], 'math_sen', 'sen'],
+      [['sa'], 'math_sa', 'sa'],
+      [['puluh'], 'math_puluh', 'puluh'],
+      [['ratus'], 'math_ratus', 'ratus'],
+      [['ribu'], 'math_ribu', 'ribu'],
+      [['sentimeter'], 'math_sentimeter', 'sentimeter'],
+      [['kilogram'], 'math_kilogram', 'kilogram'],
+      [['meter'], 'math_meter', 'meter'],
+      [['liter'], 'math_liter', 'liter']
+    ];
+
+    for (const [keywords, customKey, fileKey] of mathMap) {
+      if (keywords.some(kw => trimmed === kw)) {
+        if (this.customAudioUrls.has(customKey)) {
+          return { url: this.customAudioUrls.get(customKey)!, isCustom: true };
+        }
+        return { url: `/audio/ms/math/${fileKey}.mp3`, isCustom: false };
+      }
+    }
+
+    return null;
   }
 
   public findVoiceForLanguage(lang: Language): SpeechSynthesisVoice | null {
@@ -388,8 +492,6 @@ class VoiceEngine {
       utterance.voice = matchedVoice;
       utterance.lang = matchedVoice.lang;
     } else {
-      // In BM, if no authentic Malaysian voice is installed in browser,
-      // never speak with an Indonesian or English voice!
       if (lang === 'bm') {
         if (onEnd) onEnd();
         return;
@@ -424,10 +526,10 @@ class VoiceEngine {
     this.stop();
 
     if (lang === 'bm') {
-      // 1. Check for authentic pre-recorded Malaysian studio audio (Numbers 0-100, Feedback, Math terms)
-      const staticAudioUrl = matchStaticMalayAudio(text);
-      if (staticAudioUrl) {
-        this.playAudio(staticAudioUrl, onEnd);
+      // 1. Check for custom child voice recording OR studio soundbank audio
+      const audioMatch = this.matchAudioItem(text);
+      if (audioMatch) {
+        this.playAudio(audioMatch.url, audioMatch.isCustom, onEnd);
         return;
       }
 
@@ -460,7 +562,6 @@ class VoiceEngine {
             ended = true;
             this.notifyState(false);
             this.currentAudio = null;
-            // Fallback to browser synthesis only if authentic Malaysian voice exists
             this.fallbackSpeechSynthesis(cleanText, 'bm', onEnd);
           }
         };

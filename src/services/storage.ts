@@ -10,7 +10,7 @@ import {
 } from '../types/curriculum';
 
 const DB_NAME = 'MatematikPintarDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 const DEFAULT_SETTINGS: UserSettings = {
   language: 'bm',
@@ -62,6 +62,9 @@ class StorageService {
           const store = db.createObjectStore('attemptLogs', { keyPath: 'id' });
           store.createIndex('timestamp', 'timestamp', { unique: false });
           store.createIndex('topicId', 'topicId', { unique: false });
+        }
+        if (!db.objectStoreNames.contains('customVoiceAudio')) {
+          db.createObjectStore('customVoiceAudio', { keyPath: 'key' });
         }
       };
 
@@ -378,6 +381,103 @@ class StorageService {
     } catch {
       // Ignored
     }
+  }
+
+  // --- Custom Voice Audio Storage ---
+  public async saveCustomAudio(key: string, blob: Blob): Promise<void> {
+    await this.isReady;
+    if (!this.db) return;
+
+    return new Promise((resolve, reject) => {
+      try {
+        const tx = this.db!.transaction('customVoiceAudio', 'readwrite');
+        const store = tx.objectStore('customVoiceAudio');
+        store.put({ key, blob, timestamp: Date.now() });
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
+
+  public async getCustomAudio(key: string): Promise<Blob | null> {
+    await this.isReady;
+    if (!this.db) return null;
+
+    return new Promise((resolve) => {
+      try {
+        const tx = this.db!.transaction('customVoiceAudio', 'readonly');
+        const store = tx.objectStore('customVoiceAudio');
+        const req = store.get(key);
+        req.onsuccess = () => {
+          resolve(req.result ? req.result.blob : null);
+        };
+        req.onerror = () => resolve(null);
+      } catch {
+        resolve(null);
+      }
+    });
+  }
+
+  public async getAllCustomAudio(): Promise<Record<string, Blob>> {
+    await this.isReady;
+    const result: Record<string, Blob> = {};
+    if (!this.db) return result;
+
+    return new Promise((resolve) => {
+      try {
+        const tx = this.db!.transaction('customVoiceAudio', 'readonly');
+        const store = tx.objectStore('customVoiceAudio');
+        const req = store.openCursor();
+        req.onsuccess = (e) => {
+          const cursor = (e.target as IDBRequest).result as IDBCursorWithValue | null;
+          if (cursor) {
+            result[cursor.value.key] = cursor.value.blob;
+            cursor.continue();
+          } else {
+            resolve(result);
+          }
+        };
+        req.onerror = () => resolve(result);
+      } catch {
+        resolve(result);
+      }
+    });
+  }
+
+  public async deleteCustomAudio(key: string): Promise<void> {
+    await this.isReady;
+    if (!this.db) return;
+
+    return new Promise((resolve, reject) => {
+      try {
+        const tx = this.db!.transaction('customVoiceAudio', 'readwrite');
+        const store = tx.objectStore('customVoiceAudio');
+        store.delete(key);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
+
+  public async resetAllCustomAudio(): Promise<void> {
+    await this.isReady;
+    if (!this.db) return;
+
+    return new Promise((resolve, reject) => {
+      try {
+        const tx = this.db!.transaction('customVoiceAudio', 'readwrite');
+        const store = tx.objectStore('customVoiceAudio');
+        store.clear();
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      } catch (err) {
+        reject(err);
+      }
+    });
   }
 }
 
