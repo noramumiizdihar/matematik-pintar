@@ -35,7 +35,7 @@ export const translations = {
     finish: 'Selesai!',
     exit: 'Keluar',
     replay: 'Ulang Suara',
-    tapToCount: 'Ketik setiap objek untuk mengira',
+    tapToCount: 'Sentuh setiap objek untuk mengira',
     reset: 'Set Semula',
     save: 'Simpan',
     cancel: 'Batal',

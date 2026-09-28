@@ -5,6 +5,7 @@
 import { Language } from '../types/curriculum';
 import { numberToWords } from '../utils/numberWords';
 import { storage } from './storage';
+import { pitchShiftBuffer } from './pitchShift';
 
 export interface VoiceOption {
   uri: string;
@@ -27,6 +28,12 @@ class VoiceEngine {
   private isSpeakingState: boolean = false;
   private currentAudio: HTMLAudioElement | null = null;
   private customAudioUrls: Map<string, string> = new Map();
+  private audioCtx: AudioContext | null = null;
+  private currentSource: AudioBufferSourceNode | null = null;
+  private decodedCache: Map<string, AudioBuffer> = new Map();
+  private shiftedCache: Map<string, AudioBuffer> = new Map();
+  private playToken: number = 0;
+  private queuedSpeech: { text: string; lang: Language } | null = null;
   private onStateChangeListeners: ((isSpeaking: boolean) => void)[] = [];
   private onVoicesChangedListeners: (() => void)[] = [];
   private onCustomAudioChangedListeners: (() => void)[] = [];
@@ -216,6 +223,20 @@ class VoiceEngine {
   }
 
   public stop() {
+    // Any in-flight async playback checks this token and aborts itself
+    this.playToken++;
+    this.queuedSpeech = null;
+
+    if (this.currentSource) {
+      try {
+        this.currentSource.onended = null;
+        this.currentSource.stop();
+      } catch {
+        // ignore
+      }
+      this.currentSource = null;
+    }
+
     if (this.currentAudio) {
       try {
         this.currentAudio.pause();
@@ -237,56 +258,148 @@ class VoiceEngine {
     this.notifyState(false);
   }
 
-  /**
-   * Plays an audio URL.
-   * If isCustom is true, plays at natural 1.0x speed with preserved pitch.
-   * If isCustom is false, applies gentle child-tone pitch shift.
-   */
-  public playAudio(url: string, isCustom: boolean = false, onEnd?: () => void): boolean {
-    try {
-      this.stop();
+  private getContext(): AudioContext | null {
+    if (typeof window === 'undefined') return null;
+    if (!this.audioCtx) {
+      const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!Ctor) return null;
+      try {
+        this.audioCtx = new Ctor();
+      } catch {
+        return null;
+      }
+    }
+    return this.audioCtx;
+  }
 
+  /**
+   * How far above the original recording the voice should sit.
+   * The studio bank and the streamed TTS are both adult voices, so the kid personas
+   * lift them; 1.35 is roughly +5 semitones, which reads as a young child.
+   */
+  public getShiftRatio(): number {
+    if (this.voicePersona === 'adult') return 1;
+    return Math.max(1, Math.min(1.5, this.voicePitch));
+  }
+
+  private rememberBuffer(cache: Map<string, AudioBuffer>, key: string, buffer: AudioBuffer) {
+    // Dynamic sentences produce a new URL every time, so the caches need a ceiling
+    if (cache.size >= 60) {
+      const oldest = cache.keys().next().value;
+      if (oldest !== undefined) cache.delete(oldest);
+    }
+    cache.set(key, buffer);
+  }
+
+  private async loadShiftedBuffer(ctx: AudioContext, url: string, ratio: number): Promise<AudioBuffer> {
+    const key = `${url}|${ratio.toFixed(2)}`;
+    const ready = this.shiftedCache.get(key);
+    if (ready) return ready;
+
+    let decoded = this.decodedCache.get(url);
+    if (!decoded) {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`audio fetch failed: ${response.status}`);
+      const bytes = await response.arrayBuffer();
+      decoded = await ctx.decodeAudioData(bytes);
+      this.rememberBuffer(this.decodedCache, url, decoded);
+    }
+
+    const shifted = pitchShiftBuffer(ctx, decoded, ratio);
+    this.rememberBuffer(this.shiftedCache, key, shifted);
+    return shifted;
+  }
+
+  private playElement(url: string, rate: number, token: number, onEnd?: () => void, onFail?: () => void): boolean {
+    try {
       const audio = new Audio(url);
       this.currentAudio = audio;
-
-      if (isCustom) {
-        // Child's own recorded voice: play completely naturally
-        audio.playbackRate = 1.0;
-        (audio as any).preservesPitch = true;
-      } else {
-        // Studio sample: shift pitch to cheerful kid tone
-        (audio as any).preservesPitch = false;
-        const rate = this.voicePersona === 'child' ? 1.15 : this.voicePersona === 'gentle' ? 1.08 : 1.0;
-        audio.playbackRate = rate;
-      }
-
-      this.notifyState(true);
+      audio.playbackRate = rate;
+      // Only the last-resort path trades tempo for pitch; Web Audio keeps them separate
+      (audio as any).preservesPitch = rate === 1;
 
       let finished = false;
-      const finishHandler = () => {
-        if (!finished) {
-          finished = true;
-          this.notifyState(false);
-          this.currentAudio = null;
-          if (onEnd) onEnd();
-        }
+      const finish = (failed: boolean) => {
+        if (finished || token !== this.playToken) return;
+        finished = true;
+        this.notifyState(false);
+        this.currentAudio = null;
+        if (failed && onFail) onFail();
+        else if (onEnd) onEnd();
       };
 
-      audio.onended = finishHandler;
-      audio.onerror = finishHandler;
+      audio.onended = () => finish(false);
+      audio.onerror = () => finish(true);
 
       const playPromise = audio.play();
       if (playPromise !== undefined) {
-        playPromise.catch(() => finishHandler());
+        playPromise.catch(() => finish(true));
       }
-
       return true;
     } catch {
-      this.notifyState(false);
-      this.currentAudio = null;
-      if (onEnd) onEnd();
+      if (token === this.playToken) {
+        this.notifyState(false);
+        this.currentAudio = null;
+        if (onFail) onFail();
+        else if (onEnd) onEnd();
+      }
       return false;
     }
+  }
+
+  private async playShifted(url: string, ratio: number, token: number, onEnd?: () => void, onFail?: () => void) {
+    try {
+      const ctx = this.getContext();
+      if (!ctx) throw new Error('no audio context');
+
+      const buffer = await this.loadShiftedBuffer(ctx, url, ratio);
+      if (token !== this.playToken) return;
+
+      if (ctx.state === 'suspended') {
+        await ctx.resume();
+        if (token !== this.playToken) return;
+      }
+
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.playbackRate.value = 1; // pitch already handled offline, so speech keeps its pace
+      source.connect(ctx.destination);
+      this.currentSource = source;
+
+      source.onended = () => {
+        if (token !== this.playToken) return;
+        this.currentSource = null;
+        this.notifyState(false);
+        if (onEnd) onEnd();
+      };
+
+      source.start();
+    } catch {
+      if (token !== this.playToken) return;
+      // Web Audio unavailable (or the file could not be decoded): fall back to the
+      // plain element, capped so the speech never becomes too fast to follow.
+      this.playElement(url, Math.min(1.2, ratio), token, onEnd, onFail);
+    }
+  }
+
+  /**
+   * Plays an audio URL.
+   * A child's own recording is played untouched. Studio/TTS audio is pitch-shifted
+   * into a kid register without altering its tempo.
+   */
+  public playAudio(url: string, isCustom: boolean = false, onEnd?: () => void, onFail?: () => void): boolean {
+    this.stop();
+    const token = ++this.playToken;
+    const ratio = isCustom ? 1 : this.getShiftRatio();
+
+    this.notifyState(true);
+
+    if (ratio <= 1.01) {
+      return this.playElement(url, 1, token, onEnd, onFail);
+    }
+
+    void this.playShifted(url, ratio, token, onEnd, onFail);
+    return true;
   }
 
   /**
@@ -404,14 +517,17 @@ class VoiceEngine {
       return null;
     }
 
-    // English
-    const enVoice = this.voices.find(v =>
-      (v.lang.toLowerCase().startsWith('en-my') ||
-       v.lang.toLowerCase().startsWith('en-gb') ||
-       v.lang.toLowerCase().startsWith('en-us') ||
-       v.lang.toLowerCase().startsWith('en')) &&
-      !this.isIndonesianVoice(v)
-    );
+    // English — a lighter, female-sounding voice carries the kid personas better
+    const isEnglish = (v: SpeechSynthesisVoice) =>
+      v.lang.toLowerCase().startsWith('en') && !this.isIndonesianVoice(v);
+
+    if (this.voicePersona !== 'adult') {
+      const lightNames = /zira|samantha|karen|moira|tessa|fiona|aria|jenny|sonia|natasha|female|girl|kid|child/i;
+      const light = this.voices.find(v => isEnglish(v) && lightNames.test(v.name));
+      if (light) return light;
+    }
+
+    const enVoice = this.voices.find(isEnglish);
     if (enVoice) return enVoice;
 
     return this.voices.find(v => !this.isIndonesianVoice(v)) || null;
@@ -517,6 +633,50 @@ class VoiceEngine {
     }
   }
 
+  /**
+   * Warms the cache for a phrase that is about to be needed, so the first play
+   * has no fetch/decode delay. Best effort: failures are silently ignored.
+   */
+  public async prefetch(text: string, lang: Language): Promise<void> {
+    if (lang !== 'bm' || !text) return;
+    const match = this.matchAudioItem(text);
+    if (!match || match.isCustom) return;
+    const ctx = this.getContext();
+    if (!ctx) return;
+    try {
+      await this.loadShiftedBuffer(ctx, match.url, this.getShiftRatio());
+    } catch {
+      // The word will simply load on demand instead
+    }
+  }
+
+  /**
+   * Speaks without cutting off whatever is already talking.
+   * Counting out loud is the case that needs this: a child taps faster than the
+   * words play, and plain speak() would chop every number into "sa-, du-, ti-".
+   * Only the newest pending word is kept, so the voice never trails more than
+   * one word behind the taps.
+   */
+  public speakInSequence(text: string, lang: Language) {
+    if (!this.isVoiceEnabled || !text) return;
+
+    if (this.isSpeaking()) {
+      this.queuedSpeech = { text, lang };
+      return;
+    }
+
+    this.speakChained(text, lang);
+  }
+
+  private speakChained(text: string, lang: Language) {
+    this.speak(text, lang, () => {
+      // Captured before speak() runs again, since speak() clears the queue
+      const next = this.queuedSpeech;
+      this.queuedSpeech = null;
+      if (next) this.speakChained(next.text, next.lang);
+    });
+  }
+
   public speak(text: string, lang: Language, onEnd?: () => void) {
     if (!this.isVoiceEnabled || !text) {
       if (onEnd) onEnd();
@@ -529,7 +689,10 @@ class VoiceEngine {
       // 1. Check for custom child voice recording OR studio soundbank audio
       const audioMatch = this.matchAudioItem(text);
       if (audioMatch) {
-        this.playAudio(audioMatch.url, audioMatch.isCustom, onEnd);
+        this.playAudio(audioMatch.url, audioMatch.isCustom, onEnd, () => {
+          // Bank file missing or not cached yet — say it with the synthesizer instead
+          this.fallbackSpeechSynthesis(this.preprocessPhonetics(text, 'bm'), 'bm', onEnd);
+        });
         return;
       }
 
@@ -537,49 +700,10 @@ class VoiceEngine {
       const cleanText = this.preprocessPhonetics(text, 'bm');
       const dynamicUrl = `/api/tts?text=${encodeURIComponent(cleanText)}&lang=ms`;
 
-      try {
-        const audio = new Audio(dynamicUrl);
-        this.currentAudio = audio;
-        (audio as any).preservesPitch = false;
-        const rate = this.voicePersona === 'child' ? 1.15 : this.voicePersona === 'gentle' ? 1.08 : 1.0;
-        audio.playbackRate = rate;
-
-        this.notifyState(true);
-
-        let ended = false;
-        const endCallback = () => {
-          if (!ended) {
-            ended = true;
-            this.notifyState(false);
-            this.currentAudio = null;
-            if (onEnd) onEnd();
-          }
-        };
-
-        audio.onended = endCallback;
-        audio.onerror = () => {
-          if (!ended) {
-            ended = true;
-            this.notifyState(false);
-            this.currentAudio = null;
-            this.fallbackSpeechSynthesis(cleanText, 'bm', onEnd);
-          }
-        };
-
-        const p = audio.play();
-        if (p !== undefined) {
-          p.catch(() => {
-            if (!ended) {
-              ended = true;
-              this.notifyState(false);
-              this.currentAudio = null;
-              this.fallbackSpeechSynthesis(cleanText, 'bm', onEnd);
-            }
-          });
-        }
-      } catch {
+      this.playAudio(dynamicUrl, false, onEnd, () => {
+        // No TTS endpoint reachable (offline, or a static build with no proxy)
         this.fallbackSpeechSynthesis(cleanText, 'bm', onEnd);
-      }
+      });
       return;
     }
 

@@ -34,7 +34,7 @@ export const CURRICULUM_LEVELS: LevelInfo[] = [
         level: 'beginner',
         name: { bm: 'Kira Objek Ceria', en: 'Counting Fun Objects' },
         icon: '🍎',
-        description: { bm: 'Ketik setiap objek comel untuk mengira', en: 'Tap cute items one by one to count' },
+        description: { bm: 'Sentuh setiap objek comel untuk mengira', en: 'Tap cute items one by one to count' },
         learningArea: 'Nombor dan Operasi',
         standardContent: 'Awal 1.2',
         standardLearning: 'Awal 1.2.1',

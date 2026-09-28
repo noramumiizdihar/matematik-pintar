@@ -11,8 +11,9 @@ import { TopicSelectView } from './views/TopicSelectView';
 import { LessonView } from './views/LessonView';
 import { ActivityPlayerView } from './views/ActivityPlayerView';
 import { ParentDashboardView } from './views/ParentDashboardView';
+import { CuteNumberBoardView } from './views/CuteNumberBoardView';
 
-type ViewMode = 'home' | 'topic_select' | 'lesson' | 'activity_player' | 'parent_dashboard';
+type ViewMode = 'home' | 'topic_select' | 'lesson' | 'activity_player' | 'parent_dashboard' | 'number_board';
 
 export const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewMode>('home');
@@ -43,6 +44,11 @@ export const App: React.FC = () => {
   useEffect(() => {
     refreshProgressAndStats();
   }, [currentView]);
+
+  // Land at the top of every new screen instead of keeping the previous scroll offset
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [currentView, selectedLevel, selectedTopic]);
 
   // Language toggle handler
   const handleToggleLanguage = () => {
@@ -87,9 +93,9 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-start text-slate-100 selection:bg-amber-400 selection:text-indigo-950">
+    <div className="app-sky min-h-screen flex flex-col items-center justify-start text-slate-100 selection:bg-amber-400 selection:text-indigo-950">
       {/* Mobile-first centered frame container (safe area aware) */}
-      <div className="w-full max-w-lg min-h-screen flex flex-col bg-slate-900 relative shadow-2xl overflow-x-hidden">
+      <div className="app-stage w-full max-w-lg min-h-screen flex flex-col relative shadow-2xl shadow-black/40 overflow-x-hidden ring-1 ring-white/5">
         {/* Persistent App Header */}
         <Header
           language={settings.language}
@@ -114,6 +120,14 @@ export const App: React.FC = () => {
               allProgress={allProgress}
               onSelectLevel={handleSelectLevel}
               onQuickPlay={handleQuickPlay}
+              onOpenNumberBoard={() => setCurrentView('number_board')}
+            />
+          )}
+
+          {currentView === 'number_board' && (
+            <CuteNumberBoardView
+              language={settings.language}
+              onBack={() => setCurrentView('home')}
             />
           )}
 

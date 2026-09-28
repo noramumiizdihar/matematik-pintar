@@ -25,20 +25,21 @@ export const Header: React.FC<HeaderProps> = ({
   isHome = false
 }) => {
   return (
-    <header className="w-full bg-indigo-600/95 backdrop-blur text-white px-3 py-2.5 flex items-center justify-between shadow-md sticky top-0 z-40 select-none">
-      {/* Brand logo & home button */}
+    <header className="w-full bg-indigo-600/95 backdrop-blur text-white px-2.5 sm:px-3 py-2.5 flex items-center justify-between gap-2 shadow-md sticky top-0 z-40 select-none">
+      {/* Brand logo & home button — allowed to shrink so the badges and controls
+          on the right are never clipped on a narrow phone */}
       <div
         onClick={() => {
           soundFx.playClick();
           onGoHome();
         }}
-        className="flex items-center gap-2 cursor-pointer active:scale-95 transition-transform"
+        className="flex items-center gap-2 min-w-0 cursor-pointer active:scale-95 transition-transform"
       >
-        <div className="w-9 h-9 rounded-2xl bg-amber-400 flex items-center justify-center text-xl shadow-inner font-black text-indigo-950">
+        <div className="w-9 h-9 rounded-2xl bg-amber-400 flex items-center justify-center text-xl shadow-inner font-black text-indigo-950 shrink-0">
           📐
         </div>
-        <div className="flex flex-col">
-          <span className="font-black text-base md:text-lg leading-tight tracking-tight">
+        <div className="flex flex-col min-w-0">
+          <span className="font-black text-sm sm:text-base md:text-lg leading-tight tracking-tight truncate">
             Matematik<span className="text-amber-300">Pintar</span>
           </span>
           <span className="text-[10px] text-indigo-200 font-bold hidden sm:inline">
@@ -48,7 +49,7 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* Center badges: Streak & Stars */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5 shrink-0">
         {/* Streak */}
         <div
           title={language === 'bm' ? 'Hari berturut-turut' : 'Day streak'}
@@ -69,7 +70,7 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* Right Controls: Sound FX, Language toggle, Parent Zone */}
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1 shrink-0">
         {/* Sound toggle */}
         <button
           type="button"

@@ -67,7 +67,7 @@ export const ShopkeeperMoney: React.FC<ShopkeeperMoneyProps> = ({
         <div className="min-h-[70px] bg-amber-50 rounded-2xl p-3 border-2 border-dashed border-amber-300 flex flex-wrap items-center gap-2">
           {selectedNotes.length === 0 ? (
             <span className="text-xs font-bold text-amber-700/60 mx-auto">
-              {language === 'bm' ? 'Ketik wang di bawah untuk bayar' : 'Tap money below to pay'}
+              {language === 'bm' ? 'Tekan wang di bawah untuk bayar' : 'Tap money below to pay'}
             </span>
           ) : (
             selectedNotes.map((val, idx) => (

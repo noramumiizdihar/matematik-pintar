@@ -16,6 +16,7 @@ import { ShopkeeperMoney } from '../components/game/ShopkeeperMoney';
 import { ClockTrain } from '../components/game/ClockTrain';
 import { ComparisonPair } from '../components/game/ComparisonPair';
 import { KeypadAndChoices } from '../components/game/KeypadAndChoices';
+import { FeedbackPopup } from '../components/game/FeedbackPopup';
 
 interface ActivityPlayerViewProps {
   levelId: LevelId;
@@ -246,8 +247,11 @@ export const ActivityPlayerView: React.FC<ActivityPlayerViewProps> = ({
           {question.prompt[language]}
         </h2>
 
-        {/* Dynamic Game / Question Component */}
-        <div className="w-full flex justify-center mt-3">
+        {/* Dynamic Game / Question Component.
+            Each widget is keyed by question id so its internal state (tapped
+            objects, typed keypad digits) starts fresh on every question instead
+            of carrying over from the previous one. */}
+        <div key={question.id} className="w-full flex justify-center mt-3">
           {question.type === 'tap_to_count' && (
             <TapToCount
               question={question}
@@ -327,7 +331,7 @@ export const ActivityPlayerView: React.FC<ActivityPlayerViewProps> = ({
         </div>
       )}
 
-      {/* Feedback Dialog / Action Bar */}
+      {/* Hint link (feedback itself is shown in the popup below) */}
       <div className="w-full mt-2">
         {status === 'answering' && !showHint && (
           <div className="flex justify-center">
@@ -344,35 +348,20 @@ export const ActivityPlayerView: React.FC<ActivityPlayerViewProps> = ({
           </div>
         )}
 
-        {status === 'correct' && (
-          <div className="bg-emerald-500 text-white rounded-3xl p-4 shadow-xl border-3 border-emerald-300 flex flex-col items-center animate-pop">
-            <div className="text-lg font-black mb-1">{feedbackMessage}</div>
-            <p className="text-xs text-emerald-100 font-bold mb-3 text-center">
-              {question.explanation[language]}
-            </p>
-            <button
-              type="button"
-              onClick={handleNext}
-              className="btn-fun w-full bg-white hover:bg-emerald-50 text-emerald-800 font-black py-3.5 rounded-2xl shadow-md text-base flex items-center justify-center gap-2"
-            >
-              <span>{t('next', language)}</span>
-            </button>
-          </div>
-        )}
-
-        {status === 'retry' && (
-          <div className="bg-amber-500 text-white rounded-3xl p-4 shadow-xl border-3 border-amber-300 flex flex-col items-center animate-pop">
-            <div className="text-base font-black mb-1">{feedbackMessage}</div>
-            <button
-              type="button"
-              onClick={handleRetryCurrent}
-              className="btn-fun w-full bg-white hover:bg-amber-50 text-amber-900 font-black py-3.5 rounded-2xl shadow-md text-base mt-2"
-            >
-              {t('retry', language)}
-            </button>
-          </div>
-        )}
       </div>
+
+      {/* Answer feedback takes over the screen so the reaction is impossible to miss */}
+      {status !== 'answering' && (
+        <FeedbackPopup
+          status={status}
+          message={feedbackMessage}
+          explanation={question.explanation[language]}
+          hint={question.hint[language]}
+          language={language}
+          isLastQuestion={currentQuestionIndex + 1 >= TOTAL_QUESTIONS_PER_SESSION}
+          onPrimary={status === 'correct' ? handleNext : handleRetryCurrent}
+        />
+      )}
     </div>
   );
 };

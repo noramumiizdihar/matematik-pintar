@@ -21,6 +21,11 @@ export default {
       fontFamily: {
         kids: ['"Nunito"', 'system-ui', 'sans-serif']
       },
+      // `border-3` is used throughout the UI but is not a stock Tailwind width,
+      // so without this every one of those borders silently rendered as 0px.
+      borderWidth: {
+        3: '3px'
+      },
       animation: {
         'bounce-gentle': 'bounce-gentle 2s infinite',
         'pop': 'pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',

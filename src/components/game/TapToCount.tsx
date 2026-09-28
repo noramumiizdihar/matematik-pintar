@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Question, Language } from '../../types/curriculum';
 import { soundFx } from '../../services/soundEffects';
 import { voiceService } from '../../services/voice';
+import { numberToWords } from '../../utils/numberWords';
 
 interface TapToCountProps {
   question: Question;
@@ -9,11 +10,6 @@ interface TapToCountProps {
   onAnswer: (selected: number) => void;
   disabled?: boolean;
 }
-
-const NUMBER_WORDS: Record<Language, string[]> = {
-  bm: ['Sifar', 'Satu', 'Dua', 'Tiga', 'Empat', 'Lima', 'Enam', 'Tujuh', 'Lapan', 'Sembilan', 'Sepuluh'],
-  en: ['Zero', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten']
-};
 
 export const TapToCount: React.FC<TapToCountProps> = ({
   question,
@@ -25,6 +21,13 @@ export const TapToCount: React.FC<TapToCountProps> = ({
   const [tappedIndices, setTappedIndices] = useState<number[]>([]);
   const targetCount = question.visualData?.targetCount || Number(question.answer);
 
+  // Load the counting words ahead of time so the very first tap speaks instantly
+  useEffect(() => {
+    for (let n = 1; n <= items.length; n++) {
+      voiceService.prefetch(numberToWords(n, language), language);
+    }
+  }, [question.id, language, items.length]);
+
   const handleTapItem = (index: number) => {
     if (disabled || tappedIndices.includes(index)) return;
 
@@ -35,9 +38,9 @@ export const TapToCount: React.FC<TapToCountProps> = ({
     const pitch = 0.8 + (nextCount * 0.12);
     soundFx.playPop(pitch);
 
-    // Speak the current count aloud
-    const word = NUMBER_WORDS[language][nextCount] || String(nextCount);
-    voiceService.speak(word, language);
+    // Count aloud. Queued rather than interrupting, so tapping quickly still
+    // gives whole words: "satu, dua, tiga" instead of "sa-, du-, ti-".
+    voiceService.speakInSequence(numberToWords(nextCount, language), language);
   };
 
   const isAllTapped = tappedIndices.length === items.length;

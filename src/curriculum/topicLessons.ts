@@ -64,7 +64,7 @@ export const CURATED_LESSONS: Record<string, TopicLesson> = {
         },
         illustrationEmoji: '🎉',
         tip: {
-          bm: 'Jom ketik butang di bawah untuk cuba latihan ceria!',
+          bm: 'Jom tekan butang di bawah untuk cuba latihan ceria!',
           en: 'Tap the button below to start fun practice!'
         }
       }
@@ -77,7 +77,7 @@ export const CURATED_LESSONS: Record<string, TopicLesson> = {
     level: 'beginner',
     title: { bm: 'Cara Mengira Objek Ceria', en: 'How to Count Fun Objects' },
     summary: {
-      bm: 'Ketik satu per satu sambil menyebut nombor secara berurutan.',
+      bm: 'Sentuh satu per satu sambil menyebut nombor secara berurutan.',
       en: 'Tap each item one by one while counting in order.'
     },
     icon: '🍎',
@@ -530,7 +530,7 @@ export function getLessonForTopic(levelId: LevelId, topicId: string): TopicLesso
         },
         illustrationEmoji: '🚀',
         tip: {
-          bm: 'Ketik butang di bawah untuk memulakan latihan!',
+          bm: 'Tekan butang di bawah untuk memulakan latihan!',
           en: 'Tap the button below to start practice!'
         }
       }

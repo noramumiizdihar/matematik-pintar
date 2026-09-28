@@ -12,6 +12,23 @@ interface TopicSelectViewProps {
   onBack: () => void;
 }
 
+// How full the rail sits at each stage of mastery, and the colour it fills with
+const masteryPercent: Record<string, number> = {
+  not_started: 0,
+  learning: 25,
+  practising: 50,
+  confident: 75,
+  mastered: 100
+};
+
+const masteryFill: Record<string, string> = {
+  not_started: 'bg-slate-300',
+  learning: 'bg-blue-400',
+  practising: 'bg-amber-400',
+  confident: 'bg-indigo-500',
+  mastered: 'bg-gradient-to-r from-emerald-400 to-teal-500'
+};
+
 export const TopicSelectView: React.FC<TopicSelectViewProps> = ({
   levelId,
   language,
@@ -134,6 +151,14 @@ export const TopicSelectView: React.FC<TopicSelectViewProps> = ({
                 >
                   {getMasteryLabel(prog.mastery, language)}
                 </span>
+              </div>
+
+              {/* Mastery rail: how far this topic has progressed */}
+              <div className="rail mt-2">
+                <span
+                  className={masteryFill[prog.mastery] || 'bg-slate-300'}
+                  style={{ width: `${masteryPercent[prog.mastery] ?? 0}%` }}
+                />
               </div>
 
               {/* Action Buttons: Sesi Belajar vs Sesi Latihan */}

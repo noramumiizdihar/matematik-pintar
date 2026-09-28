@@ -53,3 +53,84 @@ body {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
+
+/* Playful night-sky backdrop.
+   The glows sit on a fixed pseudo-element so they stay put while the page
+   scrolls, without the jank that background-attachment: fixed causes on mobile. */
+.app-sky {
+  position: relative;
+  background-color: #0b1020;
+}
+
+.app-sky::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(38rem 26rem at 10% -8%, rgba(99, 102, 241, 0.45), transparent 62%),
+    radial-gradient(30rem 22rem at 94% 4%, rgba(236, 72, 153, 0.28), transparent 60%),
+    radial-gradient(34rem 24rem at 82% 92%, rgba(16, 185, 129, 0.24), transparent 62%),
+    radial-gradient(28rem 20rem at 4% 92%, rgba(245, 158, 11, 0.2), transparent 60%);
+}
+
+/* Faint star dust so the dark areas never look like flat grey */
+.app-sky::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  background-image:
+    radial-gradient(1.5px 1.5px at 18% 22%, rgba(255, 255, 255, 0.5), transparent),
+    radial-gradient(1.5px 1.5px at 72% 14%, rgba(255, 255, 255, 0.4), transparent),
+    radial-gradient(1px 1px at 38% 62%, rgba(255, 255, 255, 0.35), transparent),
+    radial-gradient(1.5px 1.5px at 88% 54%, rgba(255, 255, 255, 0.4), transparent),
+    radial-gradient(1px 1px at 8% 74%, rgba(255, 255, 255, 0.3), transparent),
+    radial-gradient(1.5px 1.5px at 56% 86%, rgba(255, 255, 255, 0.35), transparent);
+}
+
+/* Keeps real content above the two decorative layers */
+.app-stage {
+  position: relative;
+  z-index: 1;
+  background-color: rgba(11, 16, 32, 0.82);
+}
+
+/* Glows anchored to the phone frame itself, so the inside never looks flat
+   on a wide screen where the page-level glows fall outside the frame. */
+.app-stage::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    radial-gradient(24rem 18rem at 100% 0%, rgba(129, 140, 248, 0.22), transparent 60%),
+    radial-gradient(22rem 16rem at 0% 32%, rgba(244, 114, 182, 0.14), transparent 60%),
+    radial-gradient(26rem 20rem at 90% 70%, rgba(45, 212, 191, 0.14), transparent 62%);
+}
+
+/* Thin progress rail used on level and topic cards */
+.rail {
+  height: 6px;
+  border-radius: 9999px;
+  background: rgba(99, 102, 241, 0.14);
+  overflow: hidden;
+}
+
+.rail > span {
+  display: block;
+  height: 100%;
+  border-radius: 9999px;
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-fun,
+  .rail > span {
+    transition: none;
+  }
+}

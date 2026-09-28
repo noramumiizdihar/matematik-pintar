@@ -181,6 +181,38 @@ class SoundEngine {
       // Ignored
     }
   }
+
+  // Cheerful sparkle chime
+  public playSparkle() {
+    if (this.isMuted) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+
+      const freqs = [784, 988, 1175, 1319, 1568]; // G5, B5, D6, E6, G6
+      freqs.forEach((freq, idx) => {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        const startTime = this.ctx.currentTime + idx * 0.04;
+        const duration = 0.18;
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, startTime);
+
+        gain.gain.setValueAtTime(0.08, startTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start(startTime);
+        osc.stop(startTime + duration);
+      });
+    } catch {
+      // Ignored
+    }
+  }
 }
 
 export const soundFx = new SoundEngine();

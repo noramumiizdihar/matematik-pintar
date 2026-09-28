@@ -1,7 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Question, Language } from '../../types/curriculum';
 import { soundFx } from '../../services/soundEffects';
 import { t } from '../../i18n/translations';
+
+// A distinct colour per slot makes the four choices easier for young children to
+// tell apart and to refer to out loud ("the blue one").
+const OPTION_STYLES = [
+  { card: 'border-sky-200 hover:border-sky-400 hover:bg-sky-50 active:bg-sky-100', chip: 'bg-sky-100 text-sky-700' },
+  { card: 'border-rose-200 hover:border-rose-400 hover:bg-rose-50 active:bg-rose-100', chip: 'bg-rose-100 text-rose-700' },
+  { card: 'border-emerald-200 hover:border-emerald-400 hover:bg-emerald-50 active:bg-emerald-100', chip: 'bg-emerald-100 text-emerald-700' },
+  { card: 'border-amber-200 hover:border-amber-400 hover:bg-amber-50 active:bg-amber-100', chip: 'bg-amber-100 text-amber-700' }
+];
 
 interface KeypadAndChoicesProps {
   question: Question;
@@ -17,6 +26,14 @@ export const KeypadAndChoices: React.FC<KeypadAndChoicesProps> = ({
   disabled
 }) => {
   const [inputValue, setInputValue] = useState<string>('');
+
+  // After a wrong attempt the keypad is re-enabled: start from a clean slate so
+  // the child is not forced to backspace their previous answer away first.
+  const wasDisabled = useRef(false);
+  useEffect(() => {
+    if (wasDisabled.current && !disabled) setInputValue('');
+    wasDisabled.current = !!disabled;
+  }, [disabled]);
 
   const handleKeyPress = (digit: string) => {
     if (disabled) return;
@@ -147,23 +164,28 @@ export const KeypadAndChoices: React.FC<KeypadAndChoicesProps> = ({
   return (
     <div className="w-full max-w-md px-2 py-4">
       <div className="grid grid-cols-1 gap-3">
-        {question.options?.map((opt, i) => (
-          <button
-            key={i}
-            type="button"
-            disabled={disabled}
-            onClick={() => {
-              soundFx.playClick();
-              onAnswer(opt);
-            }}
-            className="btn-fun w-full bg-white hover:bg-indigo-50 active:bg-indigo-100 border-3 border-indigo-200 hover:border-indigo-400 font-black text-xl md:text-2xl py-4 px-6 rounded-2xl flex items-center justify-between shadow-md transition-all text-slate-800"
-          >
-            <span className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 text-sm font-black flex items-center justify-center mr-3 shrink-0">
-              {['A', 'B', 'C', 'D'][i]}
-            </span>
-            <span className="flex-1 text-center font-extrabold">{opt}</span>
-          </button>
-        ))}
+        {question.options?.map((opt, i) => {
+          const style = OPTION_STYLES[i % OPTION_STYLES.length];
+          return (
+            <button
+              key={i}
+              type="button"
+              disabled={disabled}
+              onClick={() => {
+                soundFx.playClick();
+                onAnswer(opt);
+              }}
+              className={`btn-fun w-full bg-white border-3 font-black text-xl md:text-2xl py-4 px-5 rounded-2xl flex items-center gap-3 shadow-md transition-all text-slate-800 ${style.card}`}
+            >
+              <span className={`w-9 h-9 rounded-full text-sm font-black flex items-center justify-center shrink-0 ${style.chip}`}>
+                {['A', 'B', 'C', 'D'][i]}
+              </span>
+              <span className="flex-1 text-center font-extrabold break-words">{opt}</span>
+              {/* Balances the chip so the answer stays optically centred */}
+              <span className="w-9 shrink-0" aria-hidden="true" />
+            </button>
+          );
+        })}
       </div>
     </div>
   );
